@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Admin\AdminBackupController;
+use App\Http\Controllers\Admin\AdminLocationSettingController;
 use App\Http\Controllers\Admin\AdminScheduleController;
 use App\Http\Controllers\Admin\AdminShiftController;
 use App\Http\Controllers\Admin\AdminUserController;
@@ -96,4 +97,8 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/backup/export', [AdminBackupController::class, 'export'])->name('backup.export');
     Route::get('/backup/export-sql', [AdminBackupController::class, 'exportSql'])->name('backup.exportSql');
     Route::post('/backup/import', [AdminBackupController::class, 'import'])->name('backup.import');
+
+    // Setting Pembatasan Radius Lokasi Maps
+    Route::get('/location-setting', [AdminLocationSettingController::class, 'index'])->name('location.index');
+    Route::post('/location-setting', [AdminLocationSettingController::class, 'update'])->name('location.update');
 });

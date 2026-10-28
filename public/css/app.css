@@ -614,6 +614,12 @@ a {
   color: #6ee7b7;
 }
 
+.gps-status-box.out-of-range {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
 /* The Two Main Action Buttons */
 .attendance-actions-grid {
   display: grid;

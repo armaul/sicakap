@@ -220,6 +220,7 @@ class AttendanceController extends Controller
             'shiftEndTime' => $shiftEndTime,
             'shiftEndTimeFormatted' => $shiftEndTimeFormatted,
             'shiftEndTimeIso' => $shiftEndTimeIso,
+            'locationSettings' => \App\Models\Setting::getLocationSettings(),
             'stats' => [
                 'totalDays' => $totalDays,
                 'onTimeDays' => $onTimeDays,
@@ -237,8 +238,19 @@ class AttendanceController extends Controller
             'shift_id' => 'required|exists:shifts,id',
             'photo' => 'nullable|string',
             'lokasi' => 'nullable|string',
+            'lat' => 'nullable|numeric',
+            'lng' => 'nullable|numeric',
             'catatan' => 'nullable|string',
         ]);
+
+        // Verifikasi ketat: Pembatasan radius lokasi maps kantor/sekolah
+        [$isLocationValid, $locationError, $distanceMeters] = $this->validateLocationCoordinates($request);
+        if (!$isLocationValid) {
+            return response()->json([
+                'success' => false,
+                'message' => $locationError,
+            ], 422);
+        }
 
         $activeUser = $this->getActiveUser($request);
         $today = Carbon::today()->format('Y-m-d');
@@ -340,8 +352,19 @@ class AttendanceController extends Controller
         $request->validate([
             'photo' => 'nullable|string',
             'lokasi' => 'nullable|string',
+            'lat' => 'nullable|numeric',
+            'lng' => 'nullable|numeric',
             'catatan' => 'nullable|string',
         ]);
+
+        // Verifikasi ketat: Pembatasan radius lokasi maps kantor/sekolah
+        [$isLocationValid, $locationError, $distanceMeters] = $this->validateLocationCoordinates($request);
+        if (!$isLocationValid) {
+            return response()->json([
+                'success' => false,
+                'message' => $locationError,
+            ], 422);
+        }
 
         $activeUser = $this->getActiveUser($request);
         $today = Carbon::today()->format('Y-m-d');
@@ -595,5 +618,80 @@ class AttendanceController extends Controller
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * Validate whether user's coordinates are within the configured office radius.
+     *
+     * @return array{0: bool, 1: ?string, 2: ?float} [isValid, errorMessage, distanceMeters]
+     */
+    protected function validateLocationCoordinates(Request $request): array
+    {
+        $settings = \App\Models\Setting::getLocationSettings();
+
+        // Jika pembatasan lokasi tidak diaktifkan, selalu lolos
+        if (!$settings['is_enabled']) {
+            return [true, null, null];
+        }
+
+        $lat = $request->input('lat');
+        $lng = $request->input('lng');
+
+        // Jika lat/lng tidak terkirim langsung, coba ekstrak dari string lokasi jika ada format "Lat: ..., Long: ..."
+        if (($lat === null || $lng === null) && $request->filled('lokasi')) {
+            if (preg_match('/Lat:\s*([-\d\.]+),\s*Long:\s*([-\d\.]+)/i', $request->lokasi, $matches)) {
+                $lat = (float) $matches[1];
+                $lng = (float) $matches[2];
+            }
+        }
+
+        if ($lat === null || $lng === null || !is_numeric($lat) || !is_numeric($lng)) {
+            return [
+                false,
+                'Titik koordinat GPS tidak terdeteksi. Harap izinkan akses lokasi (GPS) pada peramban/perangkat Anda untuk melakukan absensi.',
+                null,
+            ];
+        }
+
+        $userLat = (float) $lat;
+        $userLng = (float) $lng;
+        $officeLat = $settings['latitude'];
+        $officeLng = $settings['longitude'];
+        $maxRadius = $settings['radius_meters'];
+        $officeName = $settings['office_name'];
+
+        $distance = $this->calculateDistanceMeters($userLat, $userLng, $officeLat, $officeLng);
+
+        if ($distance > $maxRadius) {
+            $distRounded = round($distance);
+            return [
+                false,
+                "Anda berada di luar area yang diizinkan! Jarak Anda saat ini {$distRounded} meter dari {$officeName}. Batas maksimal radius adalah {$maxRadius} meter.",
+                $distance,
+            ];
+        }
+
+        return [true, null, $distance];
+    }
+
+    /**
+     * Calculate distance between two coordinates in meters using the Haversine formula.
+     */
+    protected function calculateDistanceMeters(float $lat1, float $lon1, float $lat2, float $lon2): float
+    {
+        $earthRadius = 6371000; // in meters
+
+        $latFrom = deg2rad($lat1);
+        $lonFrom = deg2rad($lon1);
+        $latTo = deg2rad($lat2);
+        $lonTo = deg2rad($lon2);
+
+        $latDelta = $latTo - $latFrom;
+        $lonDelta = $lonTo - $lonFrom;
+
+        $angle = 2 * asin(sqrt(pow(sin($latDelta / 2), 2) +
+            cos($latFrom) * cos($latTo) * pow(sin($lonDelta / 2), 2)));
+
+        return $angle * $earthRadius;
     }
 }

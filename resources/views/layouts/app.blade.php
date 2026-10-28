@@ -158,6 +158,12 @@
                             Backup & Restore
                         </a>
                     </li>
+                    <li class="nav-item {{ request()->routeIs('admin.location.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.location.index') }}" style="color:#fbbf24;" title="Setting Pembatasan Lokasi Maps">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                            Radius Lokasi
+                        </a>
+                    </li>
                 @endif
             </ul>
 
@@ -330,6 +336,12 @@
                         <a href="{{ route('admin.backup.index') }}" class="drawer-nav-link {{ request()->routeIs('admin.backup.*') ? 'active' : '' }}" onclick="closeMobileMenu()">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                             <span style="color:#fde68a;">Backup & Restore Data</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ route('admin.location.index') }}" class="drawer-nav-link {{ request()->routeIs('admin.location.*') ? 'active' : '' }}" onclick="closeMobileMenu()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                            <span style="color:#fde68a;">Radius Lokasi Maps</span>
                         </a>
                     </li>
                 </ul>

@@ -693,10 +693,16 @@
                     <div class="camera-flash" id="cameraFlash"></div>
                 </div>
 
-                <!-- GPS Geolocation Bar -->
-                <div class="gps-status-box" id="gpsStatusBox">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                    <span id="gpsLocationText">Mendeteksi lokasi GPS kantor...</span>
+                <!-- GPS Geolocation & Radius Geofence Bar -->
+                <div class="gps-status-box" id="gpsStatusBox" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                    <div style="display:flex; align-items:center; gap:0.5rem; flex:1; min-width:0;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="gpsIcon" style="flex-shrink:0;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span id="gpsLocationText" style="text-overflow:ellipsis; overflow:hidden; white-space:nowrap; font-size:0.8rem;">Mendeteksi lokasi GPS kantor...</span>
+                    </div>
+                    <button type="button" class="btn-preset" id="btnOpenMapModal" onclick="openRadiusMapModal()" style="font-size:0.75rem; padding:0.25rem 0.65rem; background:rgba(99,102,241,0.2); border-color:#818cf8; color:#fff; display:inline-flex; align-items:center; gap:0.35rem; cursor:pointer;" title="Lihat posisi Anda dan radius kantor pada peta">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg>
+                        Lihat Peta Radius
+                    </button>
                 </div>
 
                 <!-- TWO MAIN ACTION BUTTONS AS REQUIRED -->
@@ -882,4 +888,165 @@
     </div>
 @endif
 
+<!-- Modal Pratinjau Peta Geofence Radius -->
+<div id="radiusMapModal" style="display:none; position:fixed; inset:0; z-index:99999; background:rgba(0,0,0,0.78); backdrop-filter:blur(6px); align-items:center; justify-content:center; padding:1rem;">
+    <div style="background:#1e293b; border:1px solid #475569; border-radius:14px; width:100%; max-width:650px; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem 1.25rem; border-bottom:1px solid rgba(255,255,255,0.1); background:#0f172a;">
+            <div style="display:flex; align-items:center; gap:0.5rem; color:#f8fafc; font-weight:700;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                Peta Posisi & Batas Radius Absensi
+            </div>
+            <button type="button" onclick="closeRadiusMapModal()" style="background:none; border:none; color:#94a3b8; font-size:1.5rem; line-height:1; cursor:pointer;" title="Tutup">&times;</button>
+        </div>
+        <div style="padding:1rem;">
+            <div id="userRadiusMap" style="height:360px; width:100%; border-radius:8px; border:1px solid #334155;"></div>
+            <div id="mapDistanceInfo" style="margin-top:0.75rem; padding:0.65rem 0.85rem; border-radius:6px; font-size:0.825rem; font-weight:600; text-align:center; background:#0f172a; color:#cbd5e1;">
+                Menghitung jarak ke titik pusat...
+            </div>
+        </div>
+        <div style="padding:0.75rem 1.25rem; border-top:1px solid rgba(255,255,255,0.1); background:#0f172a; display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:0.75rem; color:#94a3b8;">
+                Titik Merah: Kantor &bull; Titik Biru: Posisi Anda &bull; Lingkaran: Radius Izin
+            </div>
+            <button type="button" class="btn-preset" onclick="closeRadiusMapModal()" style="padding:0.4rem 1rem;">Tutup Peta</button>
+        </div>
+    </div>
+</div>
+
 @endsection
+
+@push('styles')
+<!-- Leaflet CSS for Map Modal -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+@endpush
+
+@push('scripts')
+<!-- Leaflet JS for Map Modal -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    // Konfigurasi Geofencing dari Database
+    window.LOCATION_SETTINGS = {
+        enabled: {{ ($locationSettings['is_enabled'] ?? true) ? 'true' : 'false' }},
+        officeName: @json($locationSettings['office_name'] ?? 'SMKN 1 Jatisari (Kampus Utama)'),
+        officeLat: {{ (float) ($locationSettings['latitude'] ?? -6.3655) }},
+        officeLng: {{ (float) ($locationSettings['longitude'] ?? 107.5312) }},
+        radiusMeters: {{ (int) ($locationSettings['radius_meters'] ?? 100) }}
+    };
+
+    // Modal Peta Geofence Handlers
+    let radiusMapInstance = null;
+    let userMarker = null;
+    let officeMarker = null;
+    let geofenceCircle = null;
+    let distanceLine = null;
+
+    window.openRadiusMapModal = function() {
+        const modal = document.getElementById('radiusMapModal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+
+        setTimeout(() => {
+            initOrUpdateRadiusMap();
+        }, 150);
+    };
+
+    window.closeRadiusMapModal = function() {
+        const modal = document.getElementById('radiusMapModal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    function initOrUpdateRadiusMap() {
+        const mapContainer = document.getElementById('userRadiusMap');
+        if (!mapContainer) return;
+
+        const loc = window.LOCATION_SETTINGS;
+        const officePos = [loc.officeLat, loc.officeLng];
+        const userPos = (window.currentUserLat && window.currentUserLng) 
+            ? [window.currentUserLat, window.currentUserLng] 
+            : null;
+
+        if (!radiusMapInstance) {
+            radiusMapInstance = L.map('userRadiusMap').setView(officePos, 17);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap | SICAKAP'
+            }).addTo(radiusMapInstance);
+
+            const redIcon = L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
+            officeMarker = L.marker(officePos, { icon: redIcon }).addTo(radiusMapInstance);
+            officeMarker.bindPopup(`<strong>${loc.officeName}</strong><br>Titik Pusat Kantor`).openPopup();
+
+            geofenceCircle = L.circle(officePos, {
+                color: '#6366f1',
+                fillColor: '#818cf8',
+                fillOpacity: 0.25,
+                radius: loc.radiusMeters,
+                weight: 2
+            }).addTo(radiusMapInstance);
+        } else {
+            radiusMapInstance.invalidateSize();
+            officeMarker.setLatLng(officePos);
+            geofenceCircle.setLatLng(officePos);
+            geofenceCircle.setRadius(loc.radiusMeters);
+        }
+
+        const infoBox = document.getElementById('mapDistanceInfo');
+
+        if (userPos) {
+            const blueIcon = L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
+            if (!userMarker) {
+                userMarker = L.marker(userPos, { icon: blueIcon }).addTo(radiusMapInstance);
+            } else {
+                userMarker.setLatLng(userPos);
+            }
+            userMarker.bindPopup('<strong>Posisi Anda Saat Ini</strong>');
+
+            if (!distanceLine) {
+                distanceLine = L.polyline([officePos, userPos], { color: '#f59e0b', weight: 2, dashArray: '5, 8' }).addTo(radiusMapInstance);
+            } else {
+                distanceLine.setLatLngs([officePos, userPos]);
+            }
+
+            const bounds = L.latLngBounds([officePos, userPos]);
+            radiusMapInstance.fitBounds(bounds, { padding: [50, 50] });
+
+            if (window.currentUserDistanceMeters !== null && infoBox) {
+                const dist = Math.round(window.currentUserDistanceMeters);
+                const isWithin = dist <= loc.radiusMeters;
+                if (isWithin) {
+                    infoBox.style.color = '#34d399';
+                    infoBox.style.border = '1px solid rgba(16,185,129,0.3)';
+                    infoBox.innerHTML = `✅ Posisi Valid: Anda berjarak <strong>${dist} meter</strong> dari ${loc.officeName} (Di dalam radius maks. ${loc.radiusMeters}m)`;
+                } else {
+                    infoBox.style.color = '#f87171';
+                    infoBox.style.border = '1px solid rgba(239,68,68,0.3)';
+                    infoBox.innerHTML = `❌ Di Luar Area: Anda berjarak <strong>${dist} meter</strong> dari ${loc.officeName} (Batas maksimal: ${loc.radiusMeters}m)`;
+                }
+            }
+        } else {
+            radiusMapInstance.setView(officePos, 17);
+            if (infoBox) {
+                infoBox.style.color = '#cbd5e1';
+                infoBox.innerHTML = `GPS Anda belum terdeteksi. Silakan izinkan akses lokasi di browser.`;
+            }
+        }
+    }
+</script>
+@endpush

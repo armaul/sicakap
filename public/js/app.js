@@ -150,6 +150,21 @@ window.switchCamera = function() {
    3. Live Geolocation Detection
    ========================================================================== */
 let userLocationString = 'Pos Satpam / Kantor Utama';
+window.currentUserLat = null;
+window.currentUserLng = null;
+window.currentUserDistanceMeters = null;
+window.isWithinAllowedRadius = true;
+
+function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 function initGeolocation() {
   const gpsBox = document.getElementById('gpsStatusBox');
@@ -162,21 +177,64 @@ function initGeolocation() {
 
   navigator.geolocation.getCurrentPosition(
     (position) => {
-      const lat = position.coords.latitude.toFixed(5);
-      const lng = position.coords.longitude.toFixed(5);
+      window.currentUserLat = position.coords.latitude;
+      window.currentUserLng = position.coords.longitude;
+      const lat = window.currentUserLat.toFixed(5);
+      const lng = window.currentUserLng.toFixed(5);
       const acc = Math.round(position.coords.accuracy);
-      userLocationString = `Gedung Kantor Utama (Lat: ${lat}, Long: ${lng}) ±${acc}m`;
 
-      if (gpsText) {
-        gpsText.textContent = userLocationString;
-      }
-      if (gpsBox) {
-        gpsBox.classList.add('active');
+      const loc = window.LOCATION_SETTINGS || {
+        enabled: true,
+        officeName: 'SMKN 1 Jatisari',
+        officeLat: -6.3655,
+        officeLng: 107.5312,
+        radiusMeters: 100
+      };
+
+      if (loc.enabled) {
+        window.currentUserDistanceMeters = calculateHaversineDistance(
+          window.currentUserLat,
+          window.currentUserLng,
+          loc.officeLat,
+          loc.officeLng
+        );
+        const distRounded = Math.round(window.currentUserDistanceMeters);
+        window.isWithinAllowedRadius = window.currentUserDistanceMeters <= loc.radiusMeters;
+
+        if (window.isWithinAllowedRadius) {
+          userLocationString = `${loc.officeName} (Lat: ${lat}, Long: ${lng}) • Jarak: ${distRounded}m`;
+          if (gpsText) {
+            gpsText.innerHTML = `<span style="color:#34d399; font-weight:700;">🟢 Di Dalam Area:</span> ${distRounded}m dari ${loc.officeName} (Maks: ${loc.radiusMeters}m)`;
+          }
+          if (gpsBox) {
+            gpsBox.classList.add('active');
+            gpsBox.classList.remove('out-of-range');
+          }
+        } else {
+          userLocationString = `Di Luar Area (Lat: ${lat}, Long: ${lng}) • Jarak: ${distRounded}m dari ${loc.officeName}`;
+          if (gpsText) {
+            gpsText.innerHTML = `<span style="color:#f87171; font-weight:700;">🔴 Di Luar Area:</span> ${distRounded}m dari ${loc.officeName} (Batas: ${loc.radiusMeters}m)`;
+          }
+          if (gpsBox) {
+            gpsBox.classList.add('active');
+            gpsBox.classList.add('out-of-range');
+          }
+        }
+      } else {
+        window.isWithinAllowedRadius = true;
+        userLocationString = `${loc.officeName} (Lat: ${lat}, Long: ${lng}) ±${acc}m`;
+        if (gpsText) {
+          gpsText.innerHTML = `<span style="color:#38bdf8; font-weight:600;">🌐 GPS Aktif:</span> (Lat: ${lat}, Long: ${lng}) ±${acc}m`;
+        }
+        if (gpsBox) {
+          gpsBox.classList.add('active');
+          gpsBox.classList.remove('out-of-range');
+        }
       }
     },
     (error) => {
       userLocationString = 'Area Pos Jaga Kantor Pusat (Default GPS)';
-      if (gpsText) gpsText.textContent = userLocationString;
+      if (gpsText) gpsText.innerHTML = '<span style="color:#f59e0b;">⚠️ Akses GPS Ditolak / Tidak Terdeteksi</span>';
     },
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
   );
@@ -291,6 +349,43 @@ window.handleAbsenMasuk = async function() {
 
   if (!confirmResult.isConfirmed) return;
 
+  // Validasi Geofencing Sisi Klien
+  const locSettings = window.LOCATION_SETTINGS || { enabled: false };
+  if (locSettings.enabled) {
+    if (window.currentUserLat === null || window.currentUserLng === null) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'GPS Belum Siap',
+        text: 'Titik koordinat GPS belum terdeteksi. Pastikan Anda telah mengaktifkan GPS dan mengizinkan izin lokasi pada peramban/perangkat Anda.',
+        confirmButtonColor: '#4f46e5'
+      });
+      return;
+    }
+
+    if (!window.isWithinAllowedRadius && window.currentUserDistanceMeters !== null) {
+      const dist = Math.round(window.currentUserDistanceMeters);
+      Swal.fire({
+        icon: 'error',
+        title: 'Di Luar Area Kantor',
+        html: `
+          <div style="text-align:center;">
+            <p style="margin-bottom:8px; color:#ef4444; font-weight:700;">Absen Masuk Ditolak!</p>
+            <p style="font-size:0.9rem; color:#cbd5e1; margin-bottom:10px;">
+              Anda terdeteksi berjarak <strong>${dist} meter</strong> dari <strong>${locSettings.officeName}</strong>.<br>
+              Batas maksimal radius yang diizinkan adalah <strong>${locSettings.radiusMeters} meter</strong>.
+            </p>
+            <p style="font-size:0.8rem; color:#94a3b8;">
+              Silakan mendekat ke area sekolah/pos satpam untuk melakukan absensi.
+            </p>
+          </div>
+        `,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Mengerti'
+      });
+      return;
+    }
+  }
+
   // Capture Photo
   const photoBase64 = capturePhotoBase64();
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -311,6 +406,8 @@ window.handleAbsenMasuk = async function() {
         shift_id: shiftId,
         photo: photoBase64,
         lokasi: userLocationString,
+        lat: window.currentUserLat,
+        lng: window.currentUserLng,
         catatan: catatanInput ? catatanInput.value : ''
       })
     });
@@ -401,6 +498,40 @@ window.handleAbsenPulang = async function() {
 
   if (!confirmResult.isConfirmed) return;
 
+  // Validasi Geofencing Sisi Klien untuk Absen Pulang
+  const locSettings = window.LOCATION_SETTINGS || { enabled: false };
+  if (locSettings.enabled) {
+    if (window.currentUserLat === null || window.currentUserLng === null) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'GPS Belum Siap',
+        text: 'Titik koordinat GPS belum terdeteksi. Pastikan GPS dan izin lokasi aktif pada perangkat Anda.',
+        confirmButtonColor: '#4f46e5'
+      });
+      return;
+    }
+
+    if (!window.isWithinAllowedRadius && window.currentUserDistanceMeters !== null) {
+      const dist = Math.round(window.currentUserDistanceMeters);
+      Swal.fire({
+        icon: 'error',
+        title: 'Di Luar Area Kantor',
+        html: `
+          <div style="text-align:center;">
+            <p style="margin-bottom:8px; color:#ef4444; font-weight:700;">Absen Pulang Ditolak!</p>
+            <p style="font-size:0.9rem; color:#cbd5e1; margin-bottom:10px;">
+              Anda terdeteksi berjarak <strong>${dist} meter</strong> dari <strong>${locSettings.officeName}</strong>.<br>
+              Batas maksimal radius yang diizinkan adalah <strong>${locSettings.radiusMeters} meter</strong>.
+            </p>
+          </div>
+        `,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Mengerti'
+      });
+      return;
+    }
+  }
+
   // Capture Photo
   const photoBase64 = capturePhotoBase64();
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -420,6 +551,8 @@ window.handleAbsenPulang = async function() {
         user_id: window.ACTIVE_USER_ID || null,
         photo: photoBase64,
         lokasi: userLocationString,
+        lat: window.currentUserLat,
+        lng: window.currentUserLng,
         catatan: catatanInput ? catatanInput.value : ''
       })
     });
