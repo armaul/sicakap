@@ -18,6 +18,7 @@
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+    @stack('styles')
     
     <style>
         /* Extra inline micro-adjustments */
