@@ -59,6 +59,12 @@ class AdminBackupController extends Controller
                 'icon' => 'file-text',
                 'color' => '#ec4899',
             ],
+            'settings' => [
+                'name' => 'Pengaturan Lokasi & Geofence',
+                'count' => DB::table('settings')->count(),
+                'icon' => 'settings',
+                'color' => '#8b5cf6',
+            ],
         ];
 
         $totalRecords = array_sum(array_column($tableCounts, 'count'));
@@ -122,7 +128,8 @@ class AdminBackupController extends Controller
                 'attendances' => Attendance::count(),
                 'activity_logs' => ActivityLog::count(),
                 'leave_requests' => LeaveRequest::count(),
-                'total_records' => User::count() + Shift::count() + UserSchedule::count() + Attendance::count() + ActivityLog::count() + LeaveRequest::count(),
+                'settings' => DB::table('settings')->count(),
+                'total_records' => User::count() + Shift::count() + UserSchedule::count() + Attendance::count() + ActivityLog::count() + LeaveRequest::count() + DB::table('settings')->count(),
             ],
             'tables' => [
                 'users' => DB::table('users')->get()->toArray(),
@@ -131,6 +138,7 @@ class AdminBackupController extends Controller
                 'attendances' => DB::table('attendances')->get()->toArray(),
                 'activity_logs' => DB::table('activity_logs')->get()->toArray(),
                 'leave_requests' => DB::table('leave_requests')->get()->toArray(),
+                'settings' => DB::table('settings')->get()->toArray(),
             ],
         ];
 
@@ -148,7 +156,7 @@ class AdminBackupController extends Controller
      */
     public function exportSql(Request $request)
     {
-        $tables = ['users', 'shifts', 'user_schedules', 'attendances', 'activity_logs', 'leave_requests'];
+        $tables = ['users', 'shifts', 'user_schedules', 'attendances', 'activity_logs', 'leave_requests', 'settings'];
         $now = Carbon::now();
 
         $sql = "-- ========================================================\n";
@@ -234,13 +242,14 @@ class AdminBackupController extends Controller
             'attendances' => 0,
             'activity_logs' => 0,
             'leave_requests' => 0,
+            'settings' => 0,
         ];
 
         DB::beginTransaction();
         try {
             $this->setForeignKeyChecks(false);
 
-            $tables = ['users', 'shifts', 'user_schedules', 'attendances', 'activity_logs', 'leave_requests'];
+            $tables = ['users', 'shifts', 'user_schedules', 'attendances', 'activity_logs', 'leave_requests', 'settings'];
 
             if ($mode === 'replace') {
                 // Mode Timpa Bersih: Kosongkan seluruh tabel operasional
